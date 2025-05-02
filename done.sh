@@ -7,9 +7,9 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-echo "Please enter your Student ID: 225N068422"
-echo "Please enter your ClassID: 21"
-echo "Please enter your Full Name: ທ ເພັງ ຢ່າງ"
+echo "Please enter your Student ID: 225q006822"
+echo "Please enter your ClassID: 3"
+echo "Please enter your Full Name: ທ ມັງກອນ ລໍຫວັນເງີ
 
 echo ""
 echo "*** 1. Basic Setting"
