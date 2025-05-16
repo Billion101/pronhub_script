@@ -1,130 +1,96 @@
 #!/bin/bash
 
-# Linux Final Skill Exam Auto-Setup Script
+# Install BIND9
+# sudo apt update
+# sudo apt install -y bind9 bind9utils bind9-doc
 
-# 1. Set static IP address (you can change interface & IP as needed)
-echo "Setting static IP..."
-cat <<EOF > /etc/network/interfaces
-auto lo
-iface lo inet loopback
+# Set hostname
+sudo hostnamectl set-hostname ns.ucan.la
 
-auto eth0
-iface eth0 inet static
-    address 192.168.1.100
-    netmask 255.255.255.0
-    gateway 192.168.1.1
+# Update /etc/hosts
+sudo bash -c "cat > /etc/hosts" <<EOF
+127.0.0.1       localhost
+192.168.32.139  ns.ucan.la ns
 EOF
 
-systemctl restart networking
+# Configure /etc/bind/named.conf.options
+sudo bash -c "cat > /etc/bind/named.conf.options" <<EOF
+options {
+    directory "/var/cache/bind";
 
-# 1.c) Install Samba
-echo "Installing samba..."
-apt update
-apt install -y samba
+    recursion yes;
+    allow-query { any; };
+    listen-on { 127.0.0.1; 192.168.32.139; };
+    allow-recursion { 192.168.32.0/24; };
 
-# 1.d) Check smbd status
-systemctl status smbd
+    forwarders {
+        8.8.8.8;
+        1.1.1.1;
+    };
 
-# 2. Create groups
-echo "Creating groups..."
-groupadd IT
-groupadd HR
-groupadd Accounting
-
-# 2.2 & 2.3) Create Office_Works directory structure
-mkdir -p /home/Office_Works/{Public,IT,HR,Accounting,Users}
-
-# Set ownership and permissions
-echo "Setting ownerships and permissions..."
-chown -R nobody:nogroup /home/Office_Works/Public
-chown -R root:IT /home/Office_Works/IT
-chown -R root:HR /home/Office_Works/HR
-chown -R root:Accounting /home/Office_Works/Accounting
-chown -R root:root /home/Office_Works/Users
-
-chmod -R 775 /home/Office_Works/Public
-chmod -R 770 /home/Office_Works/{IT,HR,Accounting,Users}
-
-# 2.4) Create users and assign to directories
-declare -A users=(
-  [keomany]=IT
-  [phuvong]=IT
-  [xengkeo]=IT
-  [vanhmaly]=HR
-  [alisa]=HR
-  [manychan]=HR
-  [nithda]=HR
-  [sychan]=HR
-  [vongdeun]=Accounting
-  [khankeo]=Accounting
-)
-
-for user in "${!users[@]}"; do
-    group=${users[$user]}
-    useradd -m -d /home/Office_Works/Users/$user -g $group $user
-    echo "$user:123456" | chpasswd
-    smbpasswd -a $user <<EOF
-123456
-123456
+    dnssec-validation auto;
+};
 EOF
-    chown -R $user:$group /home/Office_Works/Users/$user
-    chmod -R 700 /home/Office_Works/Users/$user
-done
 
-# 3.1) Configure smb.conf
-echo "Backing up and updating smb.conf..."
-cp /etc/samba/smb.conf /etc/samba/smb.conf.bak
+# Configure /etc/bind/named.conf.local
+sudo bash -c "cat > /etc/bind/named.conf.local" <<EOF
+zone "ucan.la" {
+    type master;
+    file "/etc/bind/db.ucan.la";
+};
 
-cat <<EOL >> /etc/samba/smb.conf
+zone "32.168.192.in-addr.arpa" {
+    type master;
+    file "/etc/bind/db.192.168.32";
+};
+EOF
 
-[Public]
-   path = /home/Office_Works/Public
-   writable = yes
-   guest ok = yes
-   guest only = yes
-   force create mode = 775
-   force directory mode = 775
+# Create Forward Zone /etc/bind/db.ucan.la
+sudo bash -c "cat > /etc/bind/db.ucan.la" <<EOF
+\$TTL    604800
+@       IN      SOA     ns.ucan.la. admin.ucan.la. (
+                         2025051601 ; Serial
+                         604800     ; Refresh
+                         86400      ; Retry
+                         2419200    ; Expire
+                         604800 )   ; Negative Cache TTL
+;
+@       IN      NS      ns.ucan.la.
+@       IN      MX 10   mail.ucan.la.
 
-[IT]
-   path = /home/Office_Works/IT
-   writable = yes
-   guest ok = no
-   valid users = @IT
-   force create mode = 770
-   force directory mode = 770
-   inherit permissions = yes
+@       IN      A       192.168.32.139
+ns      IN      A       192.168.32.139
+www     IN      A       192.168.32.200
+api     IN      A       192.168.32.201
+fin     IN      A       192.168.32.51
+mail    IN      A       192.168.32.14
+EOF
 
-[HR]
-   path = /home/Office_Works/HR
-   writable = yes
-   guest ok = no
-   valid users = @HR
-   force create mode = 770
-   force directory mode = 770
-   inherit permissions = yes
+# Create Reverse Zone /etc/bind/db.192.168.32
+sudo bash -c "cat > /etc/bind/db.192.168.32" <<EOF
+\$TTL    604800
+@       IN      SOA     ns.ucan.la. admin.ucan.la. (
+                         2025051601 ; Serial
+                         604800     ; Refresh
+                         86400      ; Retry
+                         2419200    ; Expire
+                         604800 )   ; Negative Cache TTL
+;
+@       IN      NS      ns.ucan.la.
 
-[Accounting]
-   path = /home/Office_Works/Accounting
-   writable = yes
-   guest ok = no
-   valid users = @Accounting
-   force create mode = 770
-   force directory mode = 770
-   inherit permissions = yes
+139     IN      PTR     ns.ucan.la.
+200     IN      PTR     www.ucan.la.
+201     IN      PTR     api.ucan.la.
+51      IN      PTR     fin.ucan.la.
+14      IN      PTR     mail.ucan.la.
+EOF
 
-[Users]
-   path = /home/Office_Works/Users
-   writable = yes
-   guest ok = no
-   valid users = @IT @HR @Accounting
-   force create mode = 770
-   force directory mode = 770
-   inherit permissions = yes
-EOL
+# Check config syntax
+sudo named-checkconf
+sudo named-checkzone ucan.la /etc/bind/db.ucan.la
+sudo named-checkzone 32.168.192.in-addr.arpa /etc/bind/db.192.168.32
 
-# Restart samba
-echo "Restarting Samba service..."
-systemctl restart smbd
-systemctl enable smbd
+# Restart BIND9
+sudo systemctl restart bind9
 
-echo "✅ Setup complete!"
+echo "✅ DNS Server for ucan.la configured successfully on 192.168.32.139!"
